@@ -1,0 +1,104 @@
+<?php
+
+function block_unpublish_menu() {
+    $items['block_unpublish/process/%'] = array(
+        'title' => 'Block and unpublish',
+        'page callback' => 'block_unpublish_batch',
+        'page arguments' => array(2),
+        'access callback' => TRUE,
+        'type' => MENU_CALLBACK,
+    );
+    return $items;
+}
+
+
+function block_unpublish_permission() {
+    $perms = array(
+        'block unpublish' => array(
+            'title' => t('Block and unpublish'),
+            'description' => t('Block user and unpublish its content'),
+        )
+    );
+    return $perms;
+}
+
+/**
+ * Implements hook_user_view().
+ */
+function block_unpublish_user_view($account, $view_mode, $langcode) {
+    $account->content['masquerade'] = array(
+        '#markup' => l(t('Block user and Unpublish content'), 'block_unpublish/process/' . $account->uid, array('attributes' => array('class' => 'block_unpublish'))),
+        '#weight' => 10,
+    );
+}
+
+/*
+ * Return entity id's based on uid.
+ * return empty array when no results are found
+ */
+
+function block_unpublish_load_entity_by_uid($entity_type, $uid) {
+    $query = new EntityFieldQuery();
+    $query->entityCondition('entity_type', $entity_type)
+            ->propertyCondition('uid', $uid);
+    $result = $query->execute();
+    return (empty($result)) ? array() : array_keys($result[$entity_type]);
+}
+
+function block_unpublish_batch($uid) {
+    $nids = block_unpublish_load_entity_by_uid('node', $uid);
+    $cids = block_unpublish_load_entity_by_uid('comment', $uid);
+    $batch = array(
+        'operations' => array(
+            array('block_unpublish_batch_disable_user', array($uid)),
+            array('block_unpublish_batch_unpublish', array('node', $nids)),
+            array('block_unpublish_batch_unpublish', array('comment', $cids))
+        ),
+        'finished' => 'block_unpublish_batch_finished',
+        'title' => t('Block user and unpublish content'),
+        'progress_message' => t('Processed @current out of @total.'),
+        'error_message' => t('Batch has encountered an error.'),
+    );
+    batch_set($batch);
+    batch_process('user/' . $uid);
+}
+
+function block_unpublish_batch_disable_user($uid, &$context) {
+    $wrapper = entity_metadata_wrapper('user', $uid);
+    $wrapper->status->set(0);
+    $context['message'] = t('Disabling user %username', array('%username', $wrapper->label()));
+    $wrapper->save();
+}
+
+function block_unpublish_batch_unpublish($entity_type, $ids, &$context) {
+    if (!isset($context['sandbox']['progress'])) {
+        $context['sandbox']['progress'] = 0;
+        $context['sandbox']['max'] = count($ids);
+    }
+    // the amount of nodes to unpublish in a single batch
+    $limit = '5';
+    $process_ids = array_slice($ids, $context['sandbox']['progress'], $limit, true);
+
+    foreach ($process_ids as $key => $id) {
+        $wrapper = entity_metadata_wrapper($entity_type, $id);
+        $context['message'] = t('Now processing %entity_type: %label', array('%entity_type' => $entity_type, '%label' => $wrapper->label()));
+        $wrapper->status->set(0);
+        $wrapper->save();
+    }
+    $context['sandbox']['progress'] = $key;
+
+    if ($context['sandbox']['progress'] != $context['sandbox']['max']) {
+        $context['finished'] = ($context['sandbox']['progress'] + 1) / $context['sandbox']['max'];
+    }
+}
+
+function block_unpublish_batch_finished($success, $results, $operations) {
+    if ($success) {
+        $message = count($results) . ' processed.';
+        drupal_set_message($message);
+    } else {
+        $error_operation = reset($operations);
+        $message = t('An error occurred while processing %error_operation with arguments: @arguments', array('%error_operation' => $error_operation[0], '@arguments' => print_r($error_operation[1], TRUE)));
+        drupal_set_message($message, 'error');
+    }
+}
