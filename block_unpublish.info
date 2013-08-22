@@ -2,7 +2,6 @@ name = "Block and Unpublish"
 description = "Block user and Unpublish its contents"
 core = 7.x
 dependencies[] = entity
-dependencies[] = comment
 version = "7.x-1.x-dev"
 project = "block_unpublish"
 configure = "admin/config/content/block_unpublish"
