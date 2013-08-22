@@ -132,7 +132,7 @@ function block_unpublish_batch_finished($success, $results, $operations) {
 
 function block_unpublish_admin_settings($form, &$form_values) {
     //load all entities and select only only entities which
-    //have both status and uid property
+    //have both status and author property
     $entities = entity_get_info();
     foreach (array_keys($entities) as $entity) {
         $properties = entity_get_all_property_info($entity);
