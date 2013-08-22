@@ -5,3 +5,4 @@ dependencies[] = entity
 dependencies[] = comment
 version = "7.x-1.x-dev"
 project = "block_unpublish"
+configure = "admin/config/content/block_unpublish"

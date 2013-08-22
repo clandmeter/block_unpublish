@@ -1,35 +1,60 @@
 <?php
 
 function block_unpublish_menu() {
-    $items['block_unpublish/process/%'] = array(
+    $items['block_unpublish/process/%user'] = array(
         'title' => 'Block and unpublish',
         'page callback' => 'block_unpublish_batch',
         'page arguments' => array(2),
-        'access callback' => TRUE,
-        'type' => MENU_CALLBACK,
+        'access callback' => 'block_unpublish_access',
+        'access arguments' => array('process', 2),
+    );
+    $items['admin/config/content/block_unpublish'] = array(
+        'title' => 'Block and Unpublish',
+        'description' => 'Configure Block and Unpublish settings',
+        'page callback' => 'drupal_get_form',
+        'page arguments' => array('block_unpublish_admin_settings'),
+        'access arguments' => array('administer block unpublish'),
     );
     return $items;
 }
-
 
 function block_unpublish_permission() {
     $perms = array(
         'block unpublish' => array(
             'title' => t('Block and unpublish'),
             'description' => t('Block user and unpublish its content'),
-        )
+        ),
+        'administer block unpublish' => array(
+            'title' => t('Administer block and unpublish'),
+            'description' => t('Perform administration tasks and configure the block unpublish module'),
+        ),
     );
     return $perms;
+}
+
+function block_unpublish_access($type, $account) {
+    switch ($type) {
+        case 'process':
+            $exclude_roles = variable_get('block_unpublish_exclude_roles', array());
+            //check if the selected user belongs to a protected role.
+            $roles_match = array_intersect($exclude_roles, array_flip($account->roles));
+            return (empty($roles_match)) ? user_access('block unpublish') : FALSE;
+            break;
+        default:
+            return FALSE;
+    }
 }
 
 /**
  * Implements hook_user_view().
  */
 function block_unpublish_user_view($account, $view_mode, $langcode) {
-    $account->content['masquerade'] = array(
-        '#markup' => l(t('Block user and Unpublish content'), 'block_unpublish/process/' . $account->uid, array('attributes' => array('class' => 'block_unpublish'))),
-        '#weight' => 10,
-    );
+    if (block_unpublish_access('process', $account)) {
+        $account->content['block_unpublish'] = array(
+            '#markup' => '<div>' . l(t('Block user and Unpublish content'), 'block_unpublish/process/' . $account->uid, array('attributes' => array('class' => 'block_unpublish'))) . '</div>',
+            '#weight' => 10,
+        );
+    }
 }
 
 /*
@@ -37,7 +62,7 @@ function block_unpublish_user_view($account, $view_mode, $langcode) {
  * return empty array when no results are found
  */
 
-function block_unpublish_load_entity_by_uid($entity_type, $uid) {
+function block_unpublish_get_entity_by_uid($entity_type, $uid) {
     $query = new EntityFieldQuery();
     $query->entityCondition('entity_type', $entity_type)
             ->propertyCondition('uid', $uid);
@@ -45,48 +70,48 @@ function block_unpublish_load_entity_by_uid($entity_type, $uid) {
     return (empty($result)) ? array() : array_keys($result[$entity_type]);
 }
 
-function block_unpublish_batch($uid) {
-    $nids = block_unpublish_load_entity_by_uid('node', $uid);
-    $cids = block_unpublish_load_entity_by_uid('comment', $uid);
+function block_unpublish_batch($account) {
+    //add the user entity to batch operations
+    if (variable_get('block_unpublish_process_user', TRUE)) {
+        $operations[] = array('block_unpublish_batch_set_status', array('user', array($account->uid)));
+    }
+    //add entities selected in settings form to batch operations
+    $entities = variable_get('block_unpublish_process_entities', array());
+    foreach ($entities as $entity) {
+        $ids = block_unpublish_get_entity_by_uid($entity, $account->uid);
+        $operations[] = array('block_unpublish_batch_set_status', array($entity, $ids));
+    }
     $batch = array(
-        'operations' => array(
-            array('block_unpublish_batch_disable_user', array($uid)),
-            array('block_unpublish_batch_unpublish', array('node', $nids)),
-            array('block_unpublish_batch_unpublish', array('comment', $cids))
-        ),
+        'operations' => $operations,
         'finished' => 'block_unpublish_batch_finished',
         'title' => t('Block user and unpublish content'),
         'progress_message' => t('Processed @current out of @total.'),
         'error_message' => t('Batch has encountered an error.'),
     );
     batch_set($batch);
-    batch_process('user/' . $uid);
+    batch_process('user/' . $account->uid);
 }
 
-function block_unpublish_batch_disable_user($uid, &$context) {
-    $wrapper = entity_metadata_wrapper('user', $uid);
-    $wrapper->status->set(0);
-    $context['message'] = t('Disabling user %username', array('%username', $wrapper->label()));
-    $wrapper->save();
-}
-
-function block_unpublish_batch_unpublish($entity_type, $ids, &$context) {
+function block_unpublish_batch_set_status($entity_type, $ids, &$context) {
     if (!isset($context['sandbox']['progress'])) {
         $context['sandbox']['progress'] = 0;
         $context['sandbox']['max'] = count($ids);
     }
-    // the amount of nodes to unpublish in a single batch
-    $limit = '5';
-    $process_ids = array_slice($ids, $context['sandbox']['progress'], $limit, true);
-
-    foreach ($process_ids as $key => $id) {
+    // the amount of entities to set status in a single batch
+    $limit = variable_get('block_unpublish_process_limit', 5);
+    //take part of the ids array defined by limit and process these ids
+    $limit_ids = array_slice($ids, $context['sandbox']['progress'], $limit, TRUE);
+    foreach ($limit_ids as $key => $id) {
         $wrapper = entity_metadata_wrapper($entity_type, $id);
         $context['message'] = t('Now processing %entity_type: %label', array('%entity_type' => $entity_type, '%label' => $wrapper->label()));
+        $context['results'][$entity_type][] = $wrapper->label();
         $wrapper->status->set(0);
         $wrapper->save();
     }
-    $context['sandbox']['progress'] = $key;
-
+    //set progress to the last key to use in next iteration
+    if (isset($key)) {
+        $context['sandbox']['progress'] = $key;
+    }
     if ($context['sandbox']['progress'] != $context['sandbox']['max']) {
         $context['finished'] = ($context['sandbox']['progress'] + 1) / $context['sandbox']['max'];
     }
@@ -94,11 +119,57 @@ function block_unpublish_batch_unpublish($entity_type, $ids, &$context) {
 
 function block_unpublish_batch_finished($success, $results, $operations) {
     if ($success) {
-        $message = count($results) . ' processed.';
-        drupal_set_message($message);
+        //$message = 'Processed: ';
+        foreach ($results as $entity => $ids) {
+            drupal_set_message(t('@num %entity blocked or unpublished', array('@num' => count($ids), '%entity' => $entity)));
+        }
     } else {
         $error_operation = reset($operations);
         $message = t('An error occurred while processing %error_operation with arguments: @arguments', array('%error_operation' => $error_operation[0], '@arguments' => print_r($error_operation[1], TRUE)));
         drupal_set_message($message, 'error');
     }
+}
+
+function block_unpublish_admin_settings($form, &$form_values) {
+    //load all entities and select only only entities which
+    //have both status and uid property
+    $entities = entity_get_info();
+    foreach (array_keys($entities) as $entity) {
+        $properties = entity_get_all_property_info($entity);
+        if (isset($properties['status']) && isset($properties['author'])) {
+            $options[$entity] = $entity;
+        }
+    }
+    $form['block_unpublish_process_user'] = array(
+        '#type' => 'checkbox',
+        '#title' => 'Block user',
+        '#description' => 'Check to block the user when processing the request',
+        '#default_value' => variable_get('block_unpublish_process_user', TRUE),
+    );
+    $form['block_unpublish_process_entities'] = array(
+        '#type' => 'select',
+        '#title' => 'Select entities to process',
+        '#options' => $options,
+        '#default_value' => variable_get('block_unpublish_process_entities', array()),
+        '#multiple' => TRUE,
+        '#description' => 'You can select multiple entities by holding down ctrl key'
+    );
+    $form['block_unpublish_process_limit'] = array(
+        '#type' => 'select',
+        '#title' => 'Batch limit',
+        '#options' => drupal_map_assoc(range(1, 99)),
+        '#default_value' => variable_get('block_unpublish_process_limit', '5'),
+        '#description' => 'When the status of a large amount of data/entities needs to be changed, this can be tweaked.'
+    );
+    //by default we should exclude the admin role defined in drupal core.
+    $admin_role = variable_get('user_admin_role', 0);
+    $form['block_unpublish_exclude_roles'] = array(
+        '#type' => 'select',
+        '#title' => 'Select roles',
+        '#options' => user_roles(TRUE),
+        '#default_value' => variable_get('block_unpublish_exclude_roles', array($admin_role => $admin_role)),
+        '#multiple' => TRUE,
+        '#description' => 'Select the roles which should be excluded from beeing processed'
+    );
+    return system_settings_form($form);
 }
