@@ -64,7 +64,7 @@ function block_unpublish_access($type, $account) {
 function block_unpublish_user_view($account, $view_mode, $langcode) {
     if (block_unpublish_access('process', $account)) {
         $account->content['block_unpublish'] = array(
-            '#markup' => '<div>' . l(t('Block user and Unpublish content'), 'block_unpublish/process/' . $account->uid, array('attributes' => array('class' => 'block_unpublish'))) . '</div>',
+            '#markup' => l(t('Block user and Unpublish content'), 'block_unpublish/process/' . $account->uid, array('attributes' => array('class' => 'block_unpublish'))),
             '#weight' => 10,
             '#type' => 'user_profile_item',
             '#title' => t('User moderation'),
@@ -88,6 +88,7 @@ function block_unpublish_get_entity_by_uid($entity_type, $uid) {
 /*
  * Implement confirm form to protect accidental batch processing
  */
+
 function block_unpublish_process_batch($form, $form_state, $account) {
     $question = t('Are you sure you want to block %user and unpublish its content?', array('%user' => $account->name));
     $path = 'user/' . $account->uid;
@@ -220,3 +221,27 @@ function block_unpublish_admin_settings($form, &$form_values) {
     return system_settings_form($form);
 }
 
+/*
+ * Implement hook_entity_view
+ * Add block and unpublish link to entities which are selected in module
+ * configuration page.
+ */
+
+function block_unpublish_entity_view($entity, $type, $view_mode, $langcode) {
+    $account = user_load($entity->uid);
+    if (block_unpublish_access('process', $account) && ($entity->status)) {
+        $entities = variable_get('block_unpublish_process_entities', array());
+        foreach ($entities as $entity_type) {
+            if ($type == $entity_type) {
+                $entity->content['links'][$type]['#links']['comment-block-unpublish'] = array(
+                    'title' => t('Block and Unpublish'),
+                    'href' => 'block_unpublish/process/' . $account->uid,
+                    'html' => TRUE,
+                    'attributes' => array(
+                        'title' => 'Block and Unpublish',
+                    ),
+                );
+            }
+        }
+    }
+}
