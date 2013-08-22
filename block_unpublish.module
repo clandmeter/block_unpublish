@@ -1,13 +1,14 @@
 <?php
 
-/**
+/*
  * Implements hook_menu().
  */
+
 function block_unpublish_menu() {
     $items['block_unpublish/process/%user'] = array(
         'title' => 'Block and unpublish',
-        'page callback' => 'block_unpublish_batch',
-        'page arguments' => array(2),
+        'page callback' => 'drupal_get_form',
+        'page arguments' => array('block_unpublish_process_batch', 2),
         'access callback' => 'block_unpublish_access',
         'access arguments' => array('process', 2),
     );
@@ -21,9 +22,10 @@ function block_unpublish_menu() {
     return $items;
 }
 
-/**
+/*
  * Implements hook_permission().
  */
+
 function block_unpublish_permission() {
     $perms = array(
         'block unpublish' => array(
@@ -38,9 +40,10 @@ function block_unpublish_permission() {
     return $perms;
 }
 
-/**
+/*
  * Implements access callback from use in hook_menu and hook_user_view.
  */
+
 function block_unpublish_access($type, $account) {
     switch ($type) {
         case 'process':
@@ -54,14 +57,17 @@ function block_unpublish_access($type, $account) {
     }
 }
 
-/**
+/*
  * Implements hook_user_view().
  */
+
 function block_unpublish_user_view($account, $view_mode, $langcode) {
     if (block_unpublish_access('process', $account)) {
         $account->content['block_unpublish'] = array(
             '#markup' => '<div>' . l(t('Block user and Unpublish content'), 'block_unpublish/process/' . $account->uid, array('attributes' => array('class' => 'block_unpublish'))) . '</div>',
             '#weight' => 10,
+            '#type' => 'user_profile_item',
+            '#title' => t('User moderation'),
         );
     }
 }
@@ -70,6 +76,7 @@ function block_unpublish_user_view($account, $view_mode, $langcode) {
  * get entity id's by uid property
  * return empty array when no results are found
  */
+
 function block_unpublish_get_entity_by_uid($entity_type, $uid) {
     $query = new EntityFieldQuery();
     $query->entityCondition('entity_type', $entity_type)
@@ -79,9 +86,26 @@ function block_unpublish_get_entity_by_uid($entity_type, $uid) {
 }
 
 /*
- * Implements batch processing of entities.
+ * Implement confirm form to protect accidental batch processing
  */
-function block_unpublish_batch($account) {
+function block_unpublish_process_batch($form, $form_state, $account) {
+    $question = t('Are you sure you want to block %user and unpublish its content?', array('%user' => $account->name));
+    $path = 'user/' . $account->uid;
+    $form = array(
+        'account' => array(
+            '#type' => 'value',
+            '#value' => $account,
+        )
+    );
+    return confirm_form($form, $question, $path);
+}
+
+/*
+ * Implmenent form submit to process batch
+ */
+
+function block_unpublish_process_batch_submit($form, &$form_state) {
+    $account = $form_state['values']['account'];
     //add the user entity to batch operations
     if (variable_get('block_unpublish_process_user', TRUE)) {
         $operations[] = array('block_unpublish_batch_set_status', array('user', array($account->uid)));
@@ -100,12 +124,13 @@ function block_unpublish_batch($account) {
         'error_message' => t('Batch has encountered an error.'),
     );
     batch_set($batch);
-    batch_process('user/' . $account->uid);
+    $form_state['redirect'] = 'user/' . $account->uid;
 }
 
 /*
  * Implement batch callback
  */
+
 function block_unpublish_batch_set_status($entity_type, $ids, &$context) {
     if (!isset($context['sandbox']['progress'])) {
         $context['sandbox']['progress'] = 0;
@@ -134,10 +159,12 @@ function block_unpublish_batch_set_status($entity_type, $ids, &$context) {
 /*
  * Implement batch callback when finished
  */
+
 function block_unpublish_batch_finished($success, $results, $operations) {
     if ($success) {
-        foreach ($results as $entity => $ids) {
-            drupal_set_message(t('@num %entity blocked or unpublished', array('@num' => count($ids), '%entity' => $entity)));
+        foreach ($results as $entity_type => $ids) {
+            $entity_name = (count($ids) > 1) ? $entity_type . 's' : $entity_type;
+            drupal_set_message(t('@num %entity_name blocked or unpublished', array('@num' => count($ids), '%entity_name' => $entity_name)));
         }
     } else {
         $error_operation = reset($operations);
@@ -149,6 +176,7 @@ function block_unpublish_batch_finished($success, $results, $operations) {
 /*
  * Implement system settigns form
  */
+
 function block_unpublish_admin_settings($form, &$form_values) {
     //load all entities and select only only entities which
     //have both status and author property
@@ -191,3 +219,4 @@ function block_unpublish_admin_settings($form, &$form_values) {
     );
     return system_settings_form($form);
 }
+
