@@ -1,5 +1,8 @@
 <?php
 
+/**
+ * Implements hook_menu().
+ */
 function block_unpublish_menu() {
     $items['block_unpublish/process/%user'] = array(
         'title' => 'Block and unpublish',
@@ -18,6 +21,9 @@ function block_unpublish_menu() {
     return $items;
 }
 
+/**
+ * Implements hook_permission().
+ */
 function block_unpublish_permission() {
     $perms = array(
         'block unpublish' => array(
@@ -32,6 +38,9 @@ function block_unpublish_permission() {
     return $perms;
 }
 
+/**
+ * Implements access callback from use in hook_menu and hook_user_view.
+ */
 function block_unpublish_access($type, $account) {
     switch ($type) {
         case 'process':
@@ -58,10 +67,9 @@ function block_unpublish_user_view($account, $view_mode, $langcode) {
 }
 
 /*
- * Return entity id's based on uid.
+ * get entity id's by uid property
  * return empty array when no results are found
  */
-
 function block_unpublish_get_entity_by_uid($entity_type, $uid) {
     $query = new EntityFieldQuery();
     $query->entityCondition('entity_type', $entity_type)
@@ -70,6 +78,9 @@ function block_unpublish_get_entity_by_uid($entity_type, $uid) {
     return (empty($result)) ? array() : array_keys($result[$entity_type]);
 }
 
+/*
+ * Implements batch processing of entities.
+ */
 function block_unpublish_batch($account) {
     //add the user entity to batch operations
     if (variable_get('block_unpublish_process_user', TRUE)) {
@@ -92,6 +103,9 @@ function block_unpublish_batch($account) {
     batch_process('user/' . $account->uid);
 }
 
+/*
+ * Implement batch callback
+ */
 function block_unpublish_batch_set_status($entity_type, $ids, &$context) {
     if (!isset($context['sandbox']['progress'])) {
         $context['sandbox']['progress'] = 0;
@@ -117,6 +131,9 @@ function block_unpublish_batch_set_status($entity_type, $ids, &$context) {
     }
 }
 
+/*
+ * Implement batch callback when finished
+ */
 function block_unpublish_batch_finished($success, $results, $operations) {
     if ($success) {
         foreach ($results as $entity => $ids) {
@@ -129,6 +146,9 @@ function block_unpublish_batch_finished($success, $results, $operations) {
     }
 }
 
+/*
+ * Implement system settigns form
+ */
 function block_unpublish_admin_settings($form, &$form_values) {
     //load all entities and select only only entities which
     //have both status and author property
