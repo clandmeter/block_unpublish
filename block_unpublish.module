@@ -119,7 +119,6 @@ function block_unpublish_batch_set_status($entity_type, $ids, &$context) {
 
 function block_unpublish_batch_finished($success, $results, $operations) {
     if ($success) {
-        //$message = 'Processed: ';
         foreach ($results as $entity => $ids) {
             drupal_set_message(t('@num %entity blocked or unpublished', array('@num' => count($ids), '%entity' => $entity)));
         }
@@ -161,13 +160,12 @@ function block_unpublish_admin_settings($form, &$form_values) {
         '#default_value' => variable_get('block_unpublish_process_limit', '5'),
         '#description' => 'When the status of a large amount of data/entities needs to be changed, this can be tweaked.'
     );
-    //by default we should exclude the admin role defined in drupal core.
-    $admin_role = variable_get('user_admin_role', 0);
+    //drupal has support for a default admin role. we should probably set that as default for roles exclusion.
     $form['block_unpublish_exclude_roles'] = array(
         '#type' => 'select',
         '#title' => 'Select roles',
         '#options' => user_roles(TRUE),
-        '#default_value' => variable_get('block_unpublish_exclude_roles', array($admin_role => $admin_role)),
+        '#default_value' => variable_get('block_unpublish_exclude_roles', array()),
         '#multiple' => TRUE,
         '#description' => 'Select the roles which should be excluded from beeing processed'
     );
