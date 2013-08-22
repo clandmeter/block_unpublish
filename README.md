@@ -1,4 +1,4 @@
-block_unpublish
+Drupal block_unpublish
 ===============
 
-Block user and unpublish its content
+Drupal module to block user and unpublish its content
