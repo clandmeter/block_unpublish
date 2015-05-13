@@ -234,7 +234,7 @@ function block_unpublish_entity_view($entity, $type, $view_mode, $langcode) {
         foreach ($entities as $entity_type) {
             if ($type == $entity_type) {
                 $entity->content['links'][$type]['#links']['comment-block-unpublish'] = array(
-                    'title' => t('Block and Unpublish'),
+                    'title' => t('ban'),
                     'href' => 'block_unpublish/process/' . $account->uid,
                     'html' => TRUE,
                     'attributes' => array(
